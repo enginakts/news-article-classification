@@ -1,0 +1,209 @@
+HABER KATEGORİSİ TAHMİN SİSTEMİ PROJE RAPORU
+=========================================
+
+1. PROJE ÖZETİ
+-------------
+Bu proje, Türkçe haber metinlerini kategorize etmek için makine öğrenmesi modelleri kullanan bir web uygulamasıdır. İki farklı model (Naive Bayes ve SVM) kullanılarak haber metinlerinin kategorilerini tahmin etmektedir.
+
+2. VERİ SETİ
+-----------
+Veri seti, Hugging Face platformundan alınan "Interpress News Category TR Lite" veri setidir. Veri seti, Türkiye'nin önde gelen haber sitelerinden toplanan haber metinlerinden oluşmaktadır.
+
+Veri Seti Kaynağı:
+- Platform: Hugging Face
+- Dataset: interpress_news_category_tr_lite
+- URL: https://huggingface.co/datasets/yavuzkomecoglu/interpress_news_category_tr_lite
+
+Veri Seti İndirme ve Hazırlama:
+```python
+from datasets import load_dataset
+import pandas as pd
+
+# Veri setini indir
+dataset = load_dataset("yavuzkomecoglu/interpress_news_category_tr_lite")
+
+# Eğitim ve test setlerini al
+train_df = pd.DataFrame(dataset['train'])
+test_df = pd.DataFrame(dataset['test'])
+
+# TSV formatında kaydet
+train_df.to_csv('datasets/dataset1.tsv', sep='\t', index=False)
+test_df.to_csv('datasets/dataset2.tsv', sep='\t', index=False)
+```
+
+Veri seti özellikleri:
+- Toplam örnek sayısı: 10,945 (test seti)
+- Kategori dağılımı: Dengeli dağılım
+- Metin uzunluğu: Kısa ve orta uzunlukta haber metinleri
+- Dil: Türkçe
+- Format: TSV (Tab-Separated Values)
+
+Kategoriler:
+- Edebiyat (0)
+- Ekonomi (1)
+- Siyaset (2)
+- Eğitim (3)
+- Güvenlik (4)
+- Spor (5)
+- Teknoloji (6)
+- Yaşam Tarzı (7)
+- Outdoor/Spor Ekipmanları (8)
+- Diplomasi (9)
+
+3. ÖN İŞLEME ADIMLARI
+--------------------
+Metinler üzerinde aşağıdaki ön işleme adımları uygulanmıştır:
+
+a) Metin Temizleme:
+```python
+# Küçük harfe çevirme
+text = text.lower()
+# Noktalama işaretlerini kaldırma
+text = re.sub(f'[{string.punctuation}]', ' ', text)
+# Özel karakterleri kaldırma
+text = re.sub(r'[^a-zçğıöşü\s]', '', text)
+# Rakamları kaldırma
+text = re.sub(r'[0-9]', '', text)
+# Fazla boşlukları temizleme
+text = re.sub(r'\s+', ' ', text).strip()
+```
+
+b) Tokenizasyon ve Stop Words Kaldırma:
+```python
+# NLTK tokenizer kullanımı
+word_tokens = word_tokenize(text)
+# Türkçe stop words'leri kaldırma
+stop_words = set(stopwords.words('turkish'))
+filtered_text = [word for word in word_tokens if word not in stop_words]
+# Tek harfli kelimeleri kaldırma
+filtered_text = [word for word in filtered_text if len(word) > 1]
+```
+
+c) Stemming:
+```python
+# TurkishStemmer kullanımı
+stemmer = TurkishStemmer()
+stemmed_text = [stemmer.stem(word) for word in filtered_text]
+```
+
+4. MODEL EĞİTİMİ VE KARŞILAŞTIRMA
+--------------------------------
+İki farklı sınıflandırma modeli kullanılmıştır:
+
+a) TF-IDF Vektörizasyonu:
+```python
+tfidf = TfidfVectorizer(
+    max_features=5000,  # En sık kullanılan 5000 kelime
+    min_df=2,          # En az 2 dokümanda geçen kelimeler
+    max_df=0.95,       # Dokümanların en fazla %95'inde geçen kelimeler
+    ngram_range=(1, 2) # Tek kelime ve iki kelimelik kombinasyonlar
+)
+X_train_tfidf = tfidf.fit_transform(X_train)
+```
+
+b) Naive Bayes Modeli:
+```python
+nb_model = MultinomialNB(
+    alpha=0.1,        # Laplace/Lidstone smoothing parametresi
+    fit_prior=True,   # Sınıf olasılıklarını veriden öğren
+    class_prior=None  # Sınıf ağırlıklarını otomatik hesapla
+)
+nb_model.fit(X_train_tfidf, y_train)
+```
+
+c) SVM Modeli:
+```python
+svm_model = LinearSVC(
+    random_state=42,
+    max_iter=1000
+)
+svm_model.fit(X_train_tfidf, y_train)
+```
+
+5. MODEL PERFORMANSI VE DEĞERLENDİRME
+-----------------------------------
+Her iki model için aşağıdaki performans metrikleri hesaplanmıştır:
+
+a) Cross-Validation Sonuçları:
+```python
+# Naive Bayes Cross Validation
+nb_cv_scores = cross_val_score(nb_model, X_train_tfidf, y_train, cv=5)
+print(f"Naive Bayes 5-Fold CV Skorları: {nb_cv_scores}")
+print(f"Ortalama CV Skoru: {nb_cv_scores.mean():.4f} (+/- {nb_cv_scores.std() * 2:.4f})")
+
+# SVM Cross Validation
+svm_cv_scores = cross_val_score(svm_model, X_train_tfidf, y_train, cv=5)
+print(f"SVM 5-Fold CV Skorları: {svm_cv_scores}")
+print(f"Ortalama CV Skoru: {svm_cv_scores.mean():.4f} (+/- {svm_cv_scores.std() * 2:.4f})")
+```
+
+b) Karmaşıklık Matrisleri:
+```python
+# Naive Bayes Karmaşıklık Matrisi
+nb_cm = confusion_matrix(y_test, nb_pred)
+print("\nNaive Bayes Karmaşıklık Matrisi:")
+print(nb_cm)
+
+# SVM Karmaşıklık Matrisi
+svm_cm = confusion_matrix(y_test, svm_pred)
+print("\nSVM Karmaşıklık Matrisi:")
+print(svm_cm)
+```
+
+c) Sınıflandırma Raporları:
+```python
+# Naive Bayes Sınıflandırma Raporu
+print("\nNaive Bayes Sınıflandırma Raporu:")
+print(classification_report(y_test, nb_pred))
+
+# SVM Sınıflandırma Raporu
+print("\nSVM Sınıflandırma Raporu:")
+print(classification_report(y_test, svm_pred))
+```
+
+6. SONUÇLAR VE KARŞILAŞTIRMA
+---------------------------
+Model Performans Karşılaştırması:
+
+1. Naive Bayes Modeli:
+   - Doğruluk Oranı: 83.15%
+   - Precision (Makro Ortalama): 80%
+   - Recall (Makro Ortalama): 77%
+   - F1-Score (Makro Ortalama): 78%
+
+   Kategori Bazında Performans:
+   - En Yüksek Performans: Spor (F1-Score: 0.96)
+   - En Düşük Performans: Yaşam Tarzı (F1-Score: 0.50)
+
+2. SVM Modeli:
+   - Doğruluk Oranı: 87.15%
+   - Precision (Makro Ortalama): 85%
+   - Recall (Makro Ortalama): 81%
+   - F1-Score (Makro Ortalama): 83%
+
+   Kategori Bazında Performans:
+   - En Yüksek Performans: Spor (F1-Score: 0.96)
+   - En Düşük Performans: Yaşam Tarzı (F1-Score: 0.63)
+
+Karşılaştırmalı Analiz:
+- SVM modeli, Naive Bayes modeline göre daha yüksek doğruluk oranı göstermektedir (%87.15 vs %83.15)
+- Her iki model de Spor kategorisinde en yüksek performansı göstermiştir (F1-Score: 0.96)
+- Yaşam Tarzı kategorisi her iki modelde de en düşük performansı göstermiştir
+- SVM modeli, tüm kategorilerde daha dengeli bir performans sergilemiştir
+- Naive Bayes modeli daha hızlı eğitim süresi sunmaktadır
+- Her iki model de Türkçe haber metinlerini başarılı bir şekilde kategorize edebilmektedir
+
+7. GELİŞTİRME ÖNERİLERİ
+----------------------
+- Daha büyük ve dengeli bir veri seti kullanımı
+- Derin öğrenme modellerinin (BERT, Word2Vec) denenmesi
+- Hiperparametre optimizasyonu
+- Ensemble öğrenme yöntemlerinin uygulanması
+- Kullanıcı geri bildirimlerinin toplanması ve modelin güncellenmesi
+
+8. KAYNAKÇA
+----------
+1. scikit-learn Documentation: https://scikit-learn.org/
+2. NLTK Documentation: https://www.nltk.org/
+3. TurkishStemmer Documentation: [Kaynak]
+4. Flask Documentation: https://flask.palletsprojects.com/ 
